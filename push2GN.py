@@ -515,7 +515,7 @@ if __name__ == '__main__':
     bericht += '%s' %(mail_gegevens['bericht_www'])
     mail_gegevens['bericht'] = bericht
     # verstuur de mail
-    # ~ Zendmail(mail_gegevens, SSL=False)
+    Zendmail(mail_gegevens, SSL=False)
   # zet de aantallen in de logging
   logging.info('')
   logging.info('aantal vervangen records: %s' %(tellers[0]))
