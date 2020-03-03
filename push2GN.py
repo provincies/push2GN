@@ -8,6 +8,9 @@
 # externe libraries:
 # requests           https://pypi.org/project/requests/
 #
+# zie ook: https://geonetwork-opensource.org/manuals/2.10.4/eng/developer/xml_services/csw_services.html#transaction
+#          https://docs.geoserver.org/latest/en/user/filter/filter_reference.html
+#
 # ----- GLOBALE VARIABELEN ---------------------------------------------
 
 __doc__      = 'Programma om iso xmls met een request (push) in Geonetwork te plaatsen'
@@ -403,14 +406,25 @@ if __name__ == '__main__':
       if cfg.get('cont_gegevens'): xmlTekst = vervang_contact(xmlTekst, cfg.get('cont_gegevens'))
       # voeg csw gegevens toe aan de xmlTekst
       xmlData = "<?xml version='1.0' encoding='UTF-8'?>\n"
-      xmlData += "<csw:Transaction service='CSW' version='2.0.2' xmlns:csw='http://www.opengis.net/cat/csw/2.0.2'>\n"
-      xmlData += "<csw:Insert>\n"
+      xmlData += "<csw:Transaction xmlns:csw='http://www.opengis.net/cat/csw/2.0.2' "
+      xmlData += "xmlns:ogc='http://www.opengis.net/ogc' "
+      xmlData += "xmlns:dc='http://www.purl.org/dc/elements/1.1/' "
+      xmlData += "version='2.0.2' service='CSW'>\n"
+      xmlData += "<csw:Update>\n"
       xmlData += xmlTekst
-      xmlData += "</csw:Insert>\n"
+      xmlData += "<csw:Constraint version='2.0.0'>\n"
+      xmlData += "<ogc:Filter>\n"
+      xmlData += "<ogc:PropertyIsEqualTo>\n"
+      xmlData += "<ogc:PropertyName>/csw:Record/dc:identifier</ogc:PropertyName>\n"
+      xmlData += "<ogc:Literal>%s</ogc:Literal>\n" %(zoek_waarde(xmlTekst, ['fileIdentifier', 'CharacterString']))
+      xmlData += "</ogc:PropertyIsEqualTo>\n"
+      xmlData += "</ogc:Filter>\n"
+      xmlData += "</csw:Constraint>\n"
+      xmlData += "</csw:Update>\n"
       xmlData += "</csw:Transaction>\n"
       # vervang de xml in GN
       try:
-        response_insert = client.post(URL+"/geonetwork/srv/eng/csw-publication?publishToAll=true", data=xmlData.encode('utf-8'), \
+        response_update = client.post(URL+"/geonetwork/srv/eng/csw-publication?publishToAll=true", data=xmlData.encode('utf-8'), \
                           headers={'Content-Type': 'application/xml'}, auth=(user, password))
       # exception als er een http foutmelding is https://nl.wikipedia.org/wiki/Lijst_van_HTTP-statuscodes
       except requests.exceptions.ConnectionError as http_foutje: 
@@ -467,8 +481,11 @@ if __name__ == '__main__':
     # als de request uuid niet voorkomt in de uuids, verwijder hem dan uit GN
     if GNuuid not in fileUuids:
       # verwijder de overbodige xmls
-      cswDelete = '<csw:Transaction service="CSW" version="2.0.0" xmlns:csw="http://www.opengis.net/cat/csw" '
-      cswDelete += 'xmlns:dc="http://www.purl.org/dc/elements/1.1/"    xmlns:ogc="http://www.opengis.net/ogc">\n'
+      cswDelete = '<?xml version="1.0" encoding="UTF-8"?>\n'
+      cswDelete += '<csw:Transaction xmlns:csw="http://www.opengis.net/cat/csw/2.0.2" '
+      cswDelete += 'xmlns:ogc="http://www.opengis.net/ogc" '
+      cswDelete += 'xmlns:dc="http://www.purl.org/dc/elements/1.1/" '
+      cswDelete += 'version="2.0.2" service="CSW">\n'
       cswDelete += '<csw:Delete typeName="csw:Record">\n'
       cswDelete += '<csw:Constraint version="2.0.0">\n'
       cswDelete += '<ogc:Filter>\n'
@@ -503,10 +520,10 @@ if __name__ == '__main__':
     bericht = 'Beste beheerder, \n\n\n'
     bericht += 'Bij de verwerking van %s zijn de volgende wijzigingen aangebracht:\n\n' %(os.path.splitext(bestand)[0])
     bericht += '%s\n\n' %(mail_bericht)
-    bericht += 'aantal vervangen records: %s' %(tellers[0])
-    bericht += 'aantal toegevoegde records: %s' %(tellers[1])
-    bericht += 'aantal verwijderde records: %s' %(tellers[2])
-    bericht += 'aantal aanwezige records: %s' %(tellers[3])
+    bericht += 'aantal vervangen records: %s\n' %(tellers[0])
+    bericht += 'aantal toegevoegde records: %s\n' %(tellers[1])
+    bericht += 'aantal verwijderde records: %s\n' %(tellers[2])
+    bericht += 'aantal aanwezige records: %s\n\n\n' %(tellers[3])
     bericht += '%s\n' %(mail_gegevens['bericht_naam'])
     bericht += '%s\n' %(mail_gegevens['bericht_org'])
     bericht += '%s\n' %(mail_gegevens['bericht_email'])
@@ -515,7 +532,7 @@ if __name__ == '__main__':
     bericht += '%s' %(mail_gegevens['bericht_www'])
     mail_gegevens['bericht'] = bericht
     # verstuur de mail
-    Zendmail(mail_gegevens, SSL=False)
+    # ~ Zendmail(mail_gegevens, SSL=False)
   # zet de aantallen in de logging
   logging.info('')
   logging.info('aantal vervangen records: %s' %(tellers[0]))
