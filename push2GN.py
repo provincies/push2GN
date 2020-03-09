@@ -305,6 +305,29 @@ def vervang_contact(xml, cont_gegevens):
         xml = xml[: lpoint] + xml[rpoint: ]
   return xml
 
+# ----- CSW TEKST ------------------------------------------------------
+
+def csw_tekst(StartRecord, orgNaam):
+  cswTekst = '<?xml version="1.0" encoding="UTF-8"?>\n'
+  cswTekst += '<csw:GetRecords xmlns:csw="http://www.opengis.net/cat/csw/2.0.2" xmlns:ogc="http://www.opengis.net/ogc" '
+  cswTekst += 'xmlns:gmd="http://www.isotc211.org/2005/gmd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+  cswTekst += 'xmlns:apiso="http://www.opengis.net/cat/csw/apiso/1.0" '
+  cswTekst += 'service="CSW" version="2.0.2" resultType="results" startPosition="%s" ' %(StartRecord) 
+  cswTekst += 'outputSchema="http://www.isotc211.org/2005/gmd" outputFormat="application/xml">\n'
+  cswTekst += '<csw:Query typeNames="gmd:MD_Metadata">\n'
+  cswTekst += '<csw:ElementSetName>full</csw:ElementSetName>\n'
+  cswTekst += '<csw:Constraint version="1.1.0">\n'
+  cswTekst += '<ogc:Filter>\n'
+  cswTekst += '<ogc:PropertyIsEqualTo>\n'
+  cswTekst += '<ogc:PropertyName>%s</ogc:PropertyName>\n' %('orgName')
+  cswTekst += '<ogc:Literal>%s</ogc:Literal>\n' %(orgNaam) 
+  cswTekst += '</ogc:PropertyIsEqualTo>\n'
+  cswTekst += '</ogc:Filter>\n'
+  cswTekst += '</csw:Constraint>\n'
+  cswTekst += '</csw:Query>\n'
+  cswTekst += '</csw:GetRecords>'
+  return cswTekst
+
 # ----- ZOEK WAARDE ----------------------------------------------------
 
 def zoek_waarde(xml, tags):
@@ -345,7 +368,8 @@ if __name__ == '__main__':
   URL = cfg.get('inlog_geg')['URL']
   user = cfg.get('inlog_geg')['user']
   password = cfg.get('inlog_geg')['password']
-  headers = cfg.get('headers')
+  orgNaam = cfg.get('orgNaam')
+  verifyRequest = cfg.get('verifyRequest')
   # maak een log bestand
   log_file = log_dir+os.sep+os.path.splitext(bestand)[0]+'.log'
   # maak een basis configuratie voor het loggen
@@ -360,18 +384,51 @@ if __name__ == '__main__':
   tellers = [0, 0, 0, 0]
   # maak een leeg mail bericht
   mail_bericht = ''
-  # lees de xml gegevens uit GN
-  req = requests.get("%s/geonetwork/srv/dut/q?fast=index&from=1%s" %(URL, cfg.get('orgName')), verify=True)
-  if req.status_code != requests.codes.ok:
-    logging.info('Opvragen xml gegevens geeft html fout: %s' %(req.status_code))
-  #debug# with open(os.path.splitext(bestand)[0]+'_GN.xml', 'wb') as xml:  xml.write(req.text.encode())
-  # voeg de GeoNetwork uitgelezen uuids en datestamps aan GNuuidDates toe
-  GNuuidDates = {zoek_waarde(record, ['geonet:info', 'uuid']): zoek_waarde(record, ['geonet:info', 'createDate'])[:10] for record in req.text.split('<metadata>') if zoek_waarde(record, ['geonet:info', 'uuid'])}
+  # maak een lege list voor de huidige GN file uuids en datums
+  GNuuidDates = {}
+  # open een sessie om een cookie te creeeren
+  client = requests.Session() 
+  # vul de csw tekst om het aantal records en de stap grootte te bepalen
+  xmlData = csw_tekst(1, orgNaam)
+  try:
+    csw_response = client.post(URL+'/geonetwork/srv/eng/csw', data=xmlData.encode('utf-8'), headers={'Content-Type': 'application/xml'}, auth=("admin", "HzUCs3JT"), verify=verifyRequest)
+  except requests.exceptions.RequestException as foutje:
+    logging.info('Kan het aantal records en de stap grootte niet uitlezen')
+    mail_bericht += 'Kan het aantal records en de stap grootte niet uitlezen\n' 
+    # maak een gegokt aantal en stap grootte
+    aantalRecords = 100
+    stap = 10
+  else:  
+    # geef de response in tekst
+    csw_response = csw_response.text
+    # vind het aantal records
+    vindAantal = 'numberOfRecordsMatched="'
+    lpoint = csw_response.find(vindAantal)+len(vindAantal)
+    rpoint = lpoint+csw_response[lpoint:].find('"')
+    aantalRecords = int(csw_response[lpoint: rpoint])
+    # vind de stap grootte
+    vindStap = 'numberOfRecordsReturned="'
+    lpoint = csw_response.find(vindStap)+len(vindStap)
+    rpoint = lpoint+csw_response[lpoint:].find('"')
+    stap = int(csw_response[lpoint: rpoint])
+  # lees alle records uit GN
+  for StartRecord in range(1, aantalRecords, stap):
+    # bepaal de csw tekst
+    xmlData = csw_tekst(StartRecord, orgNaam)
+    try:
+      response_get = client.post(URL+'/geonetwork/srv/eng/csw', data=xmlData.encode('utf-8'), headers={'Content-Type': 'application/xml'}, auth=("admin", "HzUCs3JT"), verify=verifyRequest)
+    except requests.exceptions.RequestException as foutje:
+      logging.info('Kan de records van %s tot %s niet inlezen') %(StartRecord, StartRecord+stap)
+      mail_bericht += 'Kan de records van %s tot %s niet inlezen\n' %(StartRecord, StartRecord+stap)
+      # ga naar het volgende startRecord
+      continue
+    else:
+      # vul de dictionary met data
+      GNuuidDates.update({zoek_waarde(record, ['fileIdentifier', 'CharacterString']): zoek_waarde(record, ['dateStamp', 'Date']) \
+         for record in response_get.text.split('MD_Metadata') if zoek_waarde(record, ['fileIdentifier', 'CharacterString'])})
   #debug# with open(os.path.splitext(bestand)[0]+'_uuids.txt', 'w') as xml:  xml.write(str(GNuuidDates))
   # zet teller 3 op aantal aanwezige records
   tellers[3] = len(GNuuidDates)
-  # open een sessie om een cookie te creeeren
-  client = requests.Session()
   # loop door de map met xml bestanden
   for xmlNaam in glob.glob(xml_map+os.sep+"*xml"):
     # open het bestand als bytes
@@ -425,7 +482,7 @@ if __name__ == '__main__':
       # vervang de xml in GN
       try:
         response_update = client.post(URL+"/geonetwork/srv/eng/csw-publication?publishToAll=true", data=xmlData.encode('utf-8'), \
-                          headers={'Content-Type': 'application/xml'}, auth=(user, password))
+                          headers={'Content-Type': 'application/xml'}, auth=(user, password), verify=verifyRequest)
       # exception als er een http foutmelding is https://nl.wikipedia.org/wiki/Lijst_van_HTTP-statuscodes
       except requests.exceptions.ConnectionError as http_foutje: 
         logging.error('Bij het vervangen in GN geeft bestand: %s een http error: %s' %(xmlNaam, http_foutje))
@@ -448,16 +505,17 @@ if __name__ == '__main__':
       # vervang de contact gegevens als de contact gegevens ingevuld zijn in het config bestand
       if cfg.get('cont_gegevens'): xmlTekst = vervang_contact(xmlTekst, cfg.get('cont_gegevens'))
       # voeg csw gegevens toe aan de xmlTekst
-      xmlData = "<?xml version='1.0' encoding='UTF-8'?>\n"
-      xmlData += "<csw:Transaction service='CSW' version='2.0.2' xmlns:csw='http://www.opengis.net/cat/csw/2.0.2'>\n"
-      xmlData += "<csw:Insert>\n"
+      xmlData = '<?xml version="1.0" encoding="UTF-8"?>\n'
+      xmlData += '<csw:Transaction service="CSW" version="2.0.2" '
+      xmlData += 'xmlns:csw="http://www.opengis.net/cat/csw/2.0.2">\n'
+      xmlData += '<csw:Insert>\n'
       xmlData += xmlTekst
-      xmlData += "</csw:Insert>\n"
-      xmlData += "</csw:Transaction>\n"
+      xmlData += '</csw:Insert>\n'
+      xmlData += '</csw:Transaction>\n'
       # voeg de xml toe aan GN
       try:
         response_insert = client.post(URL+"/geonetwork/srv/eng/csw-publication?publishToAll=true", data=xmlData.encode('utf-8'), \
-                          headers={'Content-Type': 'application/xml'}, auth=(user, password))
+                          headers={'Content-Type': 'application/xml'}, auth=(user, password), verify=verifyRequest)
       # exception als er een http foutmelding is https://nl.wikipedia.org/wiki/Lijst_van_HTTP-statuscodes
       except requests.exceptions.ConnectionError as http_foutje: 
         logging.error('Bij het toevoegen in GN geeft bestand: %s een http error: %s' %(xmlNaam, http_foutje))
@@ -481,34 +539,35 @@ if __name__ == '__main__':
     # als de request uuid niet voorkomt in de uuids, verwijder hem dan uit GN
     if GNuuid not in fileUuids:
       # verwijder de overbodige xmls
-      cswDelete = '<?xml version="1.0" encoding="UTF-8"?>\n'
-      cswDelete += '<csw:Transaction xmlns:csw="http://www.opengis.net/cat/csw/2.0.2" '
-      cswDelete += 'xmlns:ogc="http://www.opengis.net/ogc" '
-      cswDelete += 'xmlns:dc="http://www.purl.org/dc/elements/1.1/" '
-      cswDelete += 'version="2.0.2" service="CSW">\n'
-      cswDelete += '<csw:Delete typeName="csw:Record">\n'
-      cswDelete += '<csw:Constraint version="2.0.0">\n'
-      cswDelete += '<ogc:Filter>\n'
-      cswDelete += '<ogc:PropertyIsEqualTo>\n'
-      cswDelete += '<ogc:PropertyName>/csw:Record/dc:identifier</ogc:PropertyName>\n'
-      cswDelete += '<ogc:Literal>%s</ogc:Literal>\n' %(GNuuid)
-      cswDelete += '</ogc:PropertyIsEqualTo>\n'
-      cswDelete += '</ogc:Filter>\n'
-      cswDelete += '</csw:Constraint>\n'
-      cswDelete += '</csw:Delete>\n'
-      cswDelete += '</csw:Transaction>' 
+      cswData = '<?xml version="1.0" encoding="UTF-8"?>\n'
+      cswData += '<csw:Transaction xmlns:csw="http://www.opengis.net/cat/csw/2.0.2" '
+      cswData += 'xmlns:ogc="http://www.opengis.net/ogc" '
+      cswData += 'xmlns:dc="http://www.purl.org/dc/elements/1.1/" '
+      cswData += 'version="2.0.2" service="CSW">\n'
+      cswData += '<csw:Delete typeName="csw:Record">\n'
+      cswData += '<csw:Constraint version="2.0.0">\n'
+      cswData += '<ogc:Filter>\n'
+      cswData += '<ogc:PropertyIsEqualTo>\n'
+      cswData += '<ogc:PropertyName>/csw:Record/dc:identifier</ogc:PropertyName>\n'
+      cswData += '<ogc:Literal>%s</ogc:Literal>\n' %(GNuuid)
+      cswData += '</ogc:PropertyIsEqualTo>\n'
+      cswData += '</ogc:Filter>\n'
+      cswData += '</csw:Constraint>\n'
+      cswData += '</csw:Delete>\n'
+      cswData += '</csw:Transaction>' 
       try:
-        response_delete = client.delete(URL+"/geonetwork/srv/eng/csw", data=cswDelete, headers={'Content-Type': 'application/xml'}, auth=(user, password))
+        response_delete = client.delete(URL+"/geonetwork/srv/eng/csw", data=cswData.encode('utf-8'), \
+                          headers={'Content-Type': 'application/xml'}, auth=(user, password), verify=verifyRequest)
       # overige foutmeldingen
       except requests.exceptions.RequestException as foutje: 
         logging.error('Bij het verwijderen uit GN geeft bestand met UUID: %s foutmelding: %s' %(GNuuid, foutje))
-        mail_bericht += 'Bij het verwijderen uit GN geeft bestand met UUID: %s foutmelding: %s' %(GNuuid, foutje)
+        mail_bericht += 'Bij het verwijderen uit GN geeft bestand met UUID: %s foutmelding: %s\n' %(GNuuid, foutje)
         # ga naar de volgende xmlNaam
         continue
       # werk anders de logging, de mail en de teller bij
       else: 
         logging.info('Bestand met UUID: %s is verwijderd uit Geonetwork' %(GNuuid))
-        mail_bericht += 'Bestand met UUID: %s is verwijderd uit Geonetwork' %(GNuuid)
+        mail_bericht += 'Bestand met UUID: %s is verwijderd uit Geonetwork\n' %(GNuuid)
         tellers[2] += 1
         tellers[3] -= 1
   # als er iets veranderd is stuur dan een mail naar de beheerders
