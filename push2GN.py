@@ -545,18 +545,19 @@ if __name__ == '__main__':
       cswData += 'xmlns:dc="http://www.purl.org/dc/elements/1.1/" '
       cswData += 'version="2.0.2" service="CSW">\n'
       cswData += '<csw:Delete typeName="csw:Record">\n'
-      cswData += '<csw:Constraint version="2.0.0">\n'
+      cswData += '<csw:Constraint version="1.0.0">\n'
       cswData += '<ogc:Filter>\n'
       cswData += '<ogc:PropertyIsEqualTo>\n'
-      cswData += '<ogc:PropertyName>/csw:Record/dc:identifier</ogc:PropertyName>\n'
+      cswData += '<ogc:PropertyName>dc:identifier</ogc:PropertyName>\n'
       cswData += '<ogc:Literal>%s</ogc:Literal>\n' %(GNuuid)
       cswData += '</ogc:PropertyIsEqualTo>\n'
       cswData += '</ogc:Filter>\n'
       cswData += '</csw:Constraint>\n'
       cswData += '</csw:Delete>\n'
       cswData += '</csw:Transaction>' 
+      # verwijder het record
       try:
-        response_delete = client.delete(URL+"/geonetwork/srv/eng/csw", data=cswData.encode('utf-8'), \
+        response_delete = client.post(URL+"/geonetwork/srv/eng/csw-publication", data=cswData.encode('utf-8'), \
                           headers={'Content-Type': 'application/xml'}, auth=(user, password), verify=verifyRequest)
       # overige foutmeldingen
       except requests.exceptions.RequestException as foutje: 
