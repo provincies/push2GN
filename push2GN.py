@@ -328,6 +328,25 @@ def csw_tekst(StartRecord, orgNaam):
   cswTekst += '</csw:GetRecords>'
   return cswTekst
 
+# ----- RESPONSECOUNT --------------------------------------------------
+
+def responseCount(response, zoekTekst, tags):
+  """
+  Functie om een nummer terug te geven uit de requests reponse
+  met behulp van een zoekstekst en afsluitende quotes/tags:
+  """
+  # lees de response tekst
+  response = response.text
+  # bepaal de positie van de linker pointer
+  lpoint = response.find(zoekTekst+tags[:1])+len(zoekTekst+tags[:1])
+  # bepaal de positie van de rechter pointer
+  rpoint = lpoint+response[lpoint:].find(tags[1:])
+  # lees de waarde tussen de pointers
+  aantalRecords = response[lpoint: rpoint]
+  # geef een int terug of een false
+  if aantalRecords.isdigit(): return int(aantalRecords)
+  else: return False
+  
 # ----- ZOEK WAARDE ----------------------------------------------------
 
 def zoek_waarde(xml, tags):
@@ -399,18 +418,11 @@ if __name__ == '__main__':
     aantalRecords = 100
     stap = 10
   else:  
-    # geef de response in tekst
-    csw_response = csw_response.text
-    # vind het aantal records
-    vindAantal = 'numberOfRecordsMatched="'
-    lpoint = csw_response.find(vindAantal)+len(vindAantal)
-    rpoint = lpoint+csw_response[lpoint:].find('"')
-    aantalRecords = int(csw_response[lpoint: rpoint])
-    # vind de stap grootte
-    vindStap = 'numberOfRecordsReturned="'
-    lpoint = csw_response.find(vindStap)+len(vindStap)
-    rpoint = lpoint+csw_response[lpoint:].find('"')
-    stap = int(csw_response[lpoint: rpoint])
+    # bepaal het aantal records en de stap grootte als ze niet bestaan geef een fictieve waarde
+    aantalRecords = responseCount(csw_response, 'numberOfRecordsMatched=', '""')
+    if not aantalRecords: aantalRecords = 500
+    stap = responseCount(csw_response, 'numberOfRecordsReturned=', '""')
+    if not stap: stap = 10
   # lees alle records uit GN
   for StartRecord in range(1, aantalRecords, stap):
     # bepaal de csw tekst
@@ -497,9 +509,13 @@ if __name__ == '__main__':
         continue
       # werk anders de logging, de mail en de teller bij
       else: 
-        logging.info('Bestand: %s is vervangen in Geonetwork' %(xmlNaam))
-        mail_bericht += 'Bestand: %s is vervangen in Geonetwork\n' %(xmlNaam)
-        tellers[0] += 1
+        if responseCount(response_update, 'totalUpdated', '><') == 1:
+          logging.info('Bestand: %s is vervangen in Geonetwork' %(xmlNaam))
+          mail_bericht += 'Bestand: %s is vervangen in Geonetwork\n' %(xmlNaam)
+          tellers[0] += 1
+        else:
+          logging.info('Bestand: %s is niet vervangen in Geonetwork. Let op!!!' %(xmlNaam))
+          mail_bericht += 'Bestand: %s is niet vervangen in Geonetwork. Let op!!!\n' %(xmlNaam)
     # als de GNdate niet bestaat (false), voeg dan de metadata toe aan GN
     elif not GNdate:
       # vervang de contact gegevens als de contact gegevens ingevuld zijn in het config bestand
@@ -529,11 +545,15 @@ if __name__ == '__main__':
         # ga naar de volgende xmlNaam
         continue
       # werk anders de logging, de mail en de teller bij
-      else: 
-        logging.info('Bestand: %s is toegevoegd in Geonetwork' %(xmlNaam))
-        mail_bericht += 'Bestand: %s is toegevoegd in Geonetwork\n' %(xmlNaam)
-        tellers[1] += 1
-        tellers[3] += 1
+      else:
+        if responseCount(response_insert, 'totalInserted', '><') == 1:
+          logging.info('Bestand: %s is toegevoegd in Geonetwork' %(xmlNaam))
+          mail_bericht += 'Bestand: %s is toegevoegd in Geonetwork\n' %(xmlNaam)
+          tellers[1] += 1
+          tellers[3] += 1
+        else:
+          logging.info('Bestand: %s is niet toegevoegd in Geonetwork. Let op!!!' %(xmlNaam))
+          mail_bericht += 'Bestand: %s is niet toegevoegd in Geonetwork. Let op!!!\n' %(xmlNaam)
   # loop door alle uuids uit de GN request
   for GNuuid in GNuuidDates.keys():
     # als de request uuid niet voorkomt in de uuids, verwijder hem dan uit GN
@@ -566,11 +586,15 @@ if __name__ == '__main__':
         # ga naar de volgende xmlNaam
         continue
       # werk anders de logging, de mail en de teller bij
-      else: 
-        logging.info('Bestand met UUID: %s is verwijderd uit Geonetwork' %(GNuuid))
-        mail_bericht += 'Bestand met UUID: %s is verwijderd uit Geonetwork\n' %(GNuuid)
-        tellers[2] += 1
-        tellers[3] -= 1
+      else:
+        if responseCount(response_delete, 'totalDeleted', '><') == 1:
+          logging.info('Bestand met UUID: %s is verwijderd uit Geonetwork' %(GNuuid))
+          mail_bericht += 'Bestand met UUID: %s is verwijderd uit Geonetwork\n' %(GNuuid)
+          tellers[2] += 1
+          tellers[3] -= 1
+        else:
+          logging.info('Bestand met UUID: %s is niet verwijderd uit Geonetwork. Let op!!!' %(GNuuid))
+          mail_bericht += 'Bestand met UUID: %s is niet verwijderd uit Geonetwork. Let op!!!\n' %(GNuuid)
   # als er iets veranderd is stuur dan een mail naar de beheerders
   if mail_bericht:
     # lees de gegevens uit
