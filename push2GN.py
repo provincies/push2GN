@@ -415,7 +415,7 @@ if __name__ == '__main__':
     logging.info('Kan het aantal records en de stap grootte niet uitlezen')
     mail_bericht += 'Kan het aantal records en de stap grootte niet uitlezen\n' 
     # maak een gegokt aantal en stap grootte
-    aantalRecords = 100
+    aantalRecords = 500
     stap = 10
   else:  
     # bepaal het aantal records en de stap grootte als ze niet bestaan geef een fictieve waarde
