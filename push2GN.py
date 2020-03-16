@@ -309,17 +309,17 @@ def vervang_contact(xml, cont_gegevens):
 
 def csw_tekst(StartRecord, orgNaam):
   cswTekst = '<?xml version="1.0" encoding="UTF-8"?>\n'
-  cswTekst += '<csw:GetRecords xmlns:csw="http://www.opengis.net/cat/csw/2.0.2" xmlns:ogc="http://www.opengis.net/ogc" '
-  cswTekst += 'xmlns:gmd="http://www.isotc211.org/2005/gmd" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
-  cswTekst += 'xmlns:apiso="http://www.opengis.net/cat/csw/apiso/1.0" '
-  cswTekst += 'service="CSW" version="2.0.2" resultType="results" startPosition="%s" ' %(StartRecord) 
+  cswTekst += '<csw:GetRecords xmlns:csw="http://www.opengis.net/cat/csw/2.0.2" '
+  cswTekst += 'xmlns:ogc="http://www.opengis.net/ogc" '
+  cswTekst += 'xmlns:dc="http://www.purl.org/dc/elements/1.1/" '
+  cswTekst += 'version="2.0.2" service="CSW" resultType="results" startPosition="%s" ' %(StartRecord) 
   cswTekst += 'outputSchema="http://www.isotc211.org/2005/gmd" outputFormat="application/xml">\n'
   cswTekst += '<csw:Query typeNames="gmd:MD_Metadata">\n'
   cswTekst += '<csw:ElementSetName>full</csw:ElementSetName>\n'
-  cswTekst += '<csw:Constraint version="1.1.0">\n'
+  cswTekst += '<csw:Constraint version="1.0.0">\n'
   cswTekst += '<ogc:Filter>\n'
   cswTekst += '<ogc:PropertyIsEqualTo>\n'
-  cswTekst += '<ogc:PropertyName>%s</ogc:PropertyName>\n' %('orgName')
+  cswTekst += '<ogc:PropertyName>dc:OrganisationName</ogc:PropertyName>\n'
   cswTekst += '<ogc:Literal>%s</ogc:Literal>\n' %(orgNaam) 
   cswTekst += '</ogc:PropertyIsEqualTo>\n'
   cswTekst += '</ogc:Filter>\n'
@@ -410,7 +410,7 @@ if __name__ == '__main__':
   # vul de csw tekst om het aantal records en de stap grootte te bepalen
   xmlData = csw_tekst(1, orgNaam)
   try:
-    csw_response = client.post(URL+'/geonetwork/srv/eng/csw', data=xmlData.encode('utf-8'), headers={'Content-Type': 'application/xml'}, auth=("admin", "HzUCs3JT"), verify=verifyRequest)
+    csw_response = client.post(URL+'/geonetwork/srv/eng/csw', data=xmlData.encode('utf-8'), headers={'Content-Type': 'application/xml'}, auth=(user, password), verify=verifyRequest)
   except requests.exceptions.RequestException as foutje:
     logging.info('Kan het aantal records en de stap grootte niet uitlezen')
     mail_bericht += 'Kan het aantal records en de stap grootte niet uitlezen\n' 
@@ -428,7 +428,8 @@ if __name__ == '__main__':
     # bepaal de csw tekst
     xmlData = csw_tekst(StartRecord, orgNaam)
     try:
-      response_get = client.post(URL+'/geonetwork/srv/eng/csw', data=xmlData.encode('utf-8'), headers={'Content-Type': 'application/xml'}, auth=("admin", "HzUCs3JT"), verify=verifyRequest)
+      response_get = client.post(URL+'/geonetwork/srv/eng/csw', data=xmlData.encode('utf-8'), \
+                     headers={'Content-Type': 'application/xml'}, auth=(user, password), verify=verifyRequest)
     except requests.exceptions.RequestException as foutje:
       logging.info('Kan de records van %s tot %s niet inlezen') %(StartRecord, StartRecord+stap)
       mail_bericht += 'Kan de records van %s tot %s niet inlezen\n' %(StartRecord, StartRecord+stap)
@@ -484,7 +485,7 @@ if __name__ == '__main__':
       xmlData += "<csw:Constraint version='2.0.0'>\n"
       xmlData += "<ogc:Filter>\n"
       xmlData += "<ogc:PropertyIsEqualTo>\n"
-      xmlData += "<ogc:PropertyName>/csw:Record/dc:identifier</ogc:PropertyName>\n"
+      xmlData += "<ogc:PropertyName>dc:Identifier</ogc:PropertyName>\n"
       xmlData += "<ogc:Literal>%s</ogc:Literal>\n" %(zoek_waarde(xmlTekst, ['fileIdentifier', 'CharacterString']))
       xmlData += "</ogc:PropertyIsEqualTo>\n"
       xmlData += "</ogc:Filter>\n"
@@ -493,7 +494,7 @@ if __name__ == '__main__':
       xmlData += "</csw:Transaction>\n"
       # vervang de xml in GN
       try:
-        response_update = client.post(URL+"/geonetwork/srv/eng/csw-publication?publishToAll=true", data=xmlData.encode('utf-8'), \
+        response_update = client.post(URL+"/geonetwork/srv/eng/csw-publication", data=xmlData.encode('utf-8'), \
                           headers={'Content-Type': 'application/xml'}, auth=(user, password), verify=verifyRequest)
       # exception als er een http foutmelding is https://nl.wikipedia.org/wiki/Lijst_van_HTTP-statuscodes
       except requests.exceptions.ConnectionError as http_foutje: 
@@ -568,7 +569,7 @@ if __name__ == '__main__':
       cswData += '<csw:Constraint version="1.0.0">\n'
       cswData += '<ogc:Filter>\n'
       cswData += '<ogc:PropertyIsEqualTo>\n'
-      cswData += '<ogc:PropertyName>dc:identifier</ogc:PropertyName>\n'
+      cswData += '<ogc:PropertyName>dc:Identifier</ogc:PropertyName>\n'
       cswData += '<ogc:Literal>%s</ogc:Literal>\n' %(GNuuid)
       cswData += '</ogc:PropertyIsEqualTo>\n'
       cswData += '</ogc:Filter>\n'
