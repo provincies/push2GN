@@ -305,29 +305,6 @@ def vervang_contact(xml, cont_gegevens):
         xml = xml[: lpoint] + xml[rpoint: ]
   return xml
 
-# ----- CSW TEKST ------------------------------------------------------
-
-def csw_tekst(StartRecord, orgNaam):
-  cswTekst = '<?xml version="1.0" encoding="UTF-8"?>\n'
-  cswTekst += '<csw:GetRecords xmlns:csw="http://www.opengis.net/cat/csw/2.0.2" '
-  cswTekst += 'xmlns:ogc="http://www.opengis.net/ogc" '
-  cswTekst += 'xmlns:dc="http://www.purl.org/dc/elements/1.1/" '
-  cswTekst += 'version="2.0.2" service="CSW" resultType="results" startPosition="%s" ' %(StartRecord) 
-  cswTekst += 'outputSchema="http://www.isotc211.org/2005/gmd" outputFormat="application/xml">\n'
-  cswTekst += '<csw:Query typeNames="gmd:MD_Metadata">\n'
-  cswTekst += '<csw:ElementSetName>full</csw:ElementSetName>\n'
-  cswTekst += '<csw:Constraint version="1.0.0">\n'
-  cswTekst += '<ogc:Filter>\n'
-  cswTekst += '<ogc:PropertyIsEqualTo>\n'
-  cswTekst += '<ogc:PropertyName>dc:OrganisationName</ogc:PropertyName>\n'
-  cswTekst += '<ogc:Literal>%s</ogc:Literal>\n' %(orgNaam) 
-  cswTekst += '</ogc:PropertyIsEqualTo>\n'
-  cswTekst += '</ogc:Filter>\n'
-  cswTekst += '</csw:Constraint>\n'
-  cswTekst += '</csw:Query>\n'
-  cswTekst += '</csw:GetRecords>'
-  return cswTekst
-
 # ----- RESPONSECOUNT --------------------------------------------------
 
 def responseCount(response, zoekTekst, tags):
@@ -351,7 +328,7 @@ def responseCount(response, zoekTekst, tags):
 
 def zoek_waarde(xml, tags):
   """
-  zoek in de xml naar een waarde na 2 tags
+  zoek in de xml naar een waarde tussen 2 tags
   """
   # bepaal de linker en rechter pointer
   if xml.find(tags[0]) > 0:
@@ -407,38 +384,35 @@ if __name__ == '__main__':
   GNuuidDates = {}
   # open een sessie om een cookie te creeeren
   client = requests.Session() 
-  # vul de csw tekst om het aantal records en de stap grootte te bepalen
-  xmlData = csw_tekst(1, orgNaam)
+  # vul de csw GetRecords tekst 
+  cswGetRecords = '<?xml version="1.0" encoding="UTF-8"?>\n'
+  cswGetRecords += '<csw:GetRecords xmlns:csw="http://www.opengis.net/cat/csw/2.0.2" '
+  cswGetRecords += 'xmlns:ogc="http://www.opengis.net/ogc" '
+  cswGetRecords += 'xmlns:dc="http://www.purl.org/dc/elements/1.1/" '
+  cswGetRecords += 'version="2.0.2" service="CSW" resultType="results" startPosition="1" maxRecords="20000" '
+  cswGetRecords += 'outputSchema="http://www.isotc211.org/2005/gmd" outputFormat="application/xml">\n'
+  cswGetRecords += '<csw:Query typeNames="gmd:MD_Metadata">\n'
+  cswGetRecords += '<csw:ElementSetName>full</csw:ElementSetName>\n'
+  cswGetRecords += '<csw:Constraint version="1.0.0">\n'
+  cswGetRecords += '<ogc:Filter>\n'
+  cswGetRecords += '<ogc:PropertyIsEqualTo>\n'
+  cswGetRecords += '<ogc:PropertyName>dc:OrganisationName</ogc:PropertyName>\n'
+  cswGetRecords += '<ogc:Literal>%s</ogc:Literal>\n' %(orgNaam) 
+  cswGetRecords += '</ogc:PropertyIsEqualTo>\n'
+  cswGetRecords += '</ogc:Filter>\n'
+  cswGetRecords += '</csw:Constraint>\n'
+  cswGetRecords += '</csw:Query>\n'
+  cswGetRecords += '</csw:GetRecords>'
+  # lees alle records van de Organisatie uit
   try:
-    csw_response = client.post(URL+'/geonetwork/srv/eng/csw', data=xmlData.encode('utf-8'), headers={'Content-Type': 'application/xml'}, auth=(user, password), verify=verifyRequest)
+    GetRecords_response = client.post(URL+'/geonetwork/srv/eng/csw', data=cswGetRecords.encode('utf-8'), headers={'Content-Type': 'application/xml'}, auth=(user, password), verify=verifyRequest)
   except requests.exceptions.RequestException as foutje:
-    logging.info('Kan het aantal records en de stap grootte niet uitlezen')
-    mail_bericht += 'Kan het aantal records en de stap grootte niet uitlezen\n' 
-    # maak een gegokt aantal en stap grootte
-    aantalRecords = 500
-    stap = 10
-  else:  
-    # bepaal het aantal records en de stap grootte als ze niet bestaan geef een fictieve waarde
-    aantalRecords = responseCount(csw_response, 'numberOfRecordsMatched=', '""')
-    if not aantalRecords: aantalRecords = 500
-    stap = responseCount(csw_response, 'numberOfRecordsReturned=', '""')
-    if not stap: stap = 10
-  # lees alle records uit GN
-  for StartRecord in range(1, aantalRecords, stap):
-    # bepaal de csw tekst
-    xmlData = csw_tekst(StartRecord, orgNaam)
-    try:
-      response_get = client.post(URL+'/geonetwork/srv/eng/csw', data=xmlData.encode('utf-8'), \
-                     headers={'Content-Type': 'application/xml'}, auth=(user, password), verify=verifyRequest)
-    except requests.exceptions.RequestException as foutje:
-      logging.info('Kan de records van %s tot %s niet inlezen') %(StartRecord, StartRecord+stap)
-      mail_bericht += 'Kan de records van %s tot %s niet inlezen\n' %(StartRecord, StartRecord+stap)
-      # ga naar het volgende startRecord
-      continue
-    else:
-      # vul de dictionary met data
-      GNuuidDates.update({zoek_waarde(record, ['fileIdentifier', 'CharacterString']): zoek_waarde(record, ['dateStamp', 'Date']) \
-         for record in response_get.text.split('MD_Metadata') if zoek_waarde(record, ['fileIdentifier', 'CharacterString'])})
+    logging.info('Er gaat iets mis bij het uitlezen van GetRecords: %s' %(foutje))
+    mail_bericht += 'Er gaat iets mis bij het uitlezen van GetRecords: %s\n' %(foutje) 
+  else:
+    # vul de dictionary met data
+    GNuuidDates.update({zoek_waarde(record, ['fileIdentifier', 'CharacterString']): zoek_waarde(record, ['dateStamp', 'Date']) \
+                        for record in GetRecords_response.text.split('MD_Metadata') if zoek_waarde(record, ['fileIdentifier', 'CharacterString'])})    
   #debug# with open(os.path.splitext(bestand)[0]+'_uuids.txt', 'w') as xml:  xml.write(str(GNuuidDates))
   # zet teller 3 op aantal aanwezige records
   tellers[3] = len(GNuuidDates)
@@ -475,26 +449,26 @@ if __name__ == '__main__':
       # vervang de contact gegevens als de contact gegevens ingevuld zijn in het config bestand
       if cfg.get('cont_gegevens'): xmlTekst = vervang_contact(xmlTekst, cfg.get('cont_gegevens'))
       # voeg csw gegevens toe aan de xmlTekst
-      xmlData = "<?xml version='1.0' encoding='UTF-8'?>\n"
-      xmlData += "<csw:Transaction xmlns:csw='http://www.opengis.net/cat/csw/2.0.2' "
-      xmlData += "xmlns:ogc='http://www.opengis.net/ogc' "
-      xmlData += "xmlns:dc='http://www.purl.org/dc/elements/1.1/' "
-      xmlData += "version='2.0.2' service='CSW'>\n"
-      xmlData += "<csw:Update>\n"
-      xmlData += xmlTekst
-      xmlData += "<csw:Constraint version='2.0.0'>\n"
-      xmlData += "<ogc:Filter>\n"
-      xmlData += "<ogc:PropertyIsEqualTo>\n"
-      xmlData += "<ogc:PropertyName>dc:Identifier</ogc:PropertyName>\n"
-      xmlData += "<ogc:Literal>%s</ogc:Literal>\n" %(zoek_waarde(xmlTekst, ['fileIdentifier', 'CharacterString']))
-      xmlData += "</ogc:PropertyIsEqualTo>\n"
-      xmlData += "</ogc:Filter>\n"
-      xmlData += "</csw:Constraint>\n"
-      xmlData += "</csw:Update>\n"
-      xmlData += "</csw:Transaction>\n"
+      cswUpdate = "<?xml version='1.0' encoding='UTF-8'?>\n"
+      cswUpdate += "<csw:Transaction xmlns:csw='http://www.opengis.net/cat/csw/2.0.2' "
+      cswUpdate += "xmlns:ogc='http://www.opengis.net/ogc' "
+      cswUpdate += "xmlns:dc='http://www.purl.org/dc/elements/1.1/' "
+      cswUpdate += "version='2.0.2' service='CSW'>\n"
+      cswUpdate += "<csw:Update>\n"
+      cswUpdate += xmlTekst
+      cswUpdate += "<csw:Constraint version='2.0.0'>\n"
+      cswUpdate += "<ogc:Filter>\n"
+      cswUpdate += "<ogc:PropertyIsEqualTo>\n"
+      cswUpdate += "<ogc:PropertyName>dc:Identifier</ogc:PropertyName>\n"
+      cswUpdate += "<ogc:Literal>%s</ogc:Literal>\n" %(zoek_waarde(xmlTekst, ['fileIdentifier', 'CharacterString']))
+      cswUpdate += "</ogc:PropertyIsEqualTo>\n"
+      cswUpdate += "</ogc:Filter>\n"
+      cswUpdate += "</csw:Constraint>\n"
+      cswUpdate += "</csw:Update>\n"
+      cswUpdate += "</csw:Transaction>\n"
       # vervang de xml in GN
       try:
-        response_update = client.post(URL+"/geonetwork/srv/eng/csw-publication", data=xmlData.encode('utf-8'), \
+        response_update = client.post(URL+"/geonetwork/srv/eng/csw-publication", data=cswUpdate.encode('utf-8'), \
                           headers={'Content-Type': 'application/xml'}, auth=(user, password), verify=verifyRequest)
       # exception als er een http foutmelding is https://nl.wikipedia.org/wiki/Lijst_van_HTTP-statuscodes
       except requests.exceptions.ConnectionError as http_foutje: 
@@ -522,16 +496,16 @@ if __name__ == '__main__':
       # vervang de contact gegevens als de contact gegevens ingevuld zijn in het config bestand
       if cfg.get('cont_gegevens'): xmlTekst = vervang_contact(xmlTekst, cfg.get('cont_gegevens'))
       # voeg csw gegevens toe aan de xmlTekst
-      xmlData = '<?xml version="1.0" encoding="UTF-8"?>\n'
-      xmlData += '<csw:Transaction service="CSW" version="2.0.2" '
-      xmlData += 'xmlns:csw="http://www.opengis.net/cat/csw/2.0.2">\n'
-      xmlData += '<csw:Insert>\n'
-      xmlData += xmlTekst
-      xmlData += '</csw:Insert>\n'
-      xmlData += '</csw:Transaction>\n'
+      cswInsert = '<?xml version="1.0" encoding="UTF-8"?>\n'
+      cswInsert += '<csw:Transaction service="CSW" version="2.0.2" '
+      cswInsert += 'xmlns:csw="http://www.opengis.net/cat/csw/2.0.2">\n'
+      cswInsert += '<csw:Insert>\n'
+      cswInsert += xmlTekst
+      cswInsert += '</csw:Insert>\n'
+      cswInsert += '</csw:Transaction>\n'
       # voeg de xml toe aan GN
       try:
-        response_insert = client.post(URL+"/geonetwork/srv/eng/csw-publication?publishToAll=true", data=xmlData.encode('utf-8'), \
+        response_insert = client.post(URL+"/geonetwork/srv/eng/csw-publication?publishToAll=true", data=cswInsert.encode('utf-8'), \
                           headers={'Content-Type': 'application/xml'}, auth=(user, password), verify=verifyRequest)
       # exception als er een http foutmelding is https://nl.wikipedia.org/wiki/Lijst_van_HTTP-statuscodes
       except requests.exceptions.ConnectionError as http_foutje: 
@@ -560,25 +534,25 @@ if __name__ == '__main__':
     # als de request uuid niet voorkomt in de uuids, verwijder hem dan uit GN
     if GNuuid not in fileUuids:
       # verwijder de overbodige xmls
-      cswData = '<?xml version="1.0" encoding="UTF-8"?>\n'
-      cswData += '<csw:Transaction xmlns:csw="http://www.opengis.net/cat/csw/2.0.2" '
-      cswData += 'xmlns:ogc="http://www.opengis.net/ogc" '
-      cswData += 'xmlns:dc="http://www.purl.org/dc/elements/1.1/" '
-      cswData += 'version="2.0.2" service="CSW">\n'
-      cswData += '<csw:Delete typeName="csw:Record">\n'
-      cswData += '<csw:Constraint version="1.0.0">\n'
-      cswData += '<ogc:Filter>\n'
-      cswData += '<ogc:PropertyIsEqualTo>\n'
-      cswData += '<ogc:PropertyName>dc:Identifier</ogc:PropertyName>\n'
-      cswData += '<ogc:Literal>%s</ogc:Literal>\n' %(GNuuid)
-      cswData += '</ogc:PropertyIsEqualTo>\n'
-      cswData += '</ogc:Filter>\n'
-      cswData += '</csw:Constraint>\n'
-      cswData += '</csw:Delete>\n'
-      cswData += '</csw:Transaction>' 
+      cswDelete = '<?xml version="1.0" encoding="UTF-8"?>\n'
+      cswDelete += '<csw:Transaction xmlns:csw="http://www.opengis.net/cat/csw/2.0.2" '
+      cswDelete += 'xmlns:ogc="http://www.opengis.net/ogc" '
+      cswDelete += 'xmlns:dc="http://www.purl.org/dc/elements/1.1/" '
+      cswDelete += 'version="2.0.2" service="CSW">\n'
+      cswDelete += '<csw:Delete typeName="csw:Record">\n'
+      cswDelete += '<csw:Constraint version="1.0.0">\n'
+      cswDelete += '<ogc:Filter>\n'
+      cswDelete += '<ogc:PropertyIsEqualTo>\n'
+      cswDelete += '<ogc:PropertyName>dc:Identifier</ogc:PropertyName>\n'
+      cswDelete += '<ogc:Literal>%s</ogc:Literal>\n' %(GNuuid)
+      cswDelete += '</ogc:PropertyIsEqualTo>\n'
+      cswDelete += '</ogc:Filter>\n'
+      cswDelete += '</csw:Constraint>\n'
+      cswDelete += '</csw:Delete>\n'
+      cswDelete += '</csw:Transaction>' 
       # verwijder het record
       try:
-        response_delete = client.post(URL+"/geonetwork/srv/eng/csw-publication", data=cswData.encode('utf-8'), \
+        response_delete = client.post(URL+"/geonetwork/srv/eng/csw-publication", data=cswDelete.encode('utf-8'), \
                           headers={'Content-Type': 'application/xml'}, auth=(user, password), verify=verifyRequest)
       # overige foutmeldingen
       except requests.exceptions.RequestException as foutje: 
@@ -617,7 +591,7 @@ if __name__ == '__main__':
     bericht += '%s' %(mail_gegevens['bericht_www'])
     mail_gegevens['bericht'] = bericht
     # verstuur de mail
-    # ~ Zendmail(mail_gegevens, SSL=False)
+    Zendmail(mail_gegevens, SSL=False)
   # zet de aantallen in de logging
   logging.info('')
   logging.info('aantal vervangen records: %s' %(tellers[0]))
